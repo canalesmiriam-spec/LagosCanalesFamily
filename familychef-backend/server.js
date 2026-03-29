@@ -6,30 +6,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
-// Allow requests from your Netlify domain
-app.use(cors({
-  origin: [
-    'https://capable-pothos-5357fb.netlify.app',
-    'http://localhost:3000',
-    'http://127.0.0.1:5500'
-  ]
-}));
+// Accept all origins (safe since API key is server-side)
+app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
-// Health check
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'FamilyChef API', timestamp: new Date().toISOString() });
 });
 
-// Main Claude proxy endpoint
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, system, max_tokens } = req.body;
-
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: 'messages array required' });
-    }
-
+    if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'API key not configured' });
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -44,26 +32,19 @@ app.post('/api/chat', async (req, res) => {
         messages
       })
     });
-
     const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Anthropic error:', data);
-      return res.status(response.status).json({ error: data.error?.message || 'API error' });
-    }
-
+    if (!response.ok) return res.status(response.status).json({ error: data.error?.message || 'API error' });
     res.json(data);
   } catch (err) {
-    console.error('Server error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Chat error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Image/boleta analysis endpoint
 app.post('/api/analyze', async (req, res) => {
   try {
     const { imageBase64, mediaType, prompt } = req.body;
-
+    if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'API key not configured' });
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -74,24 +55,18 @@ app.post('/api/analyze', async (req, res) => {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
-            { type: 'text', text: prompt }
-          ]
-        }]
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+          { type: 'text', text: prompt }
+        ]}]
       })
     });
-
     const data = await response.json();
     if (!response.ok) return res.status(response.status).json({ error: data.error?.message });
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`FamilyChef backend running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`FamilyChef backend en puerto ${PORT}`));
